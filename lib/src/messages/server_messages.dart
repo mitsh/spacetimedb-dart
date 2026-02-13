@@ -72,11 +72,13 @@ class TransactionUpdateMessage implements ServerMessage {
 
   // Transaction metadata fields (from Rust TransactionUpdate struct)
   final UpdateStatus status;
-  final Uint8List callerIdentity;          // Identity: 32 bytes, NOT Option
-  final Uint8List callerConnectionId;      // ConnectionId: u128 (16 bytes), NOT Option
-  final ReducerInfo reducerCall;           // ReducerCallInfo struct
-  final int energyQuantaUsed;              // EnergyQuanta: u128 - stored as int (will lose precision for huge values)
-  final Int64 totalHostExecutionDuration;    // TimeDuration: i64 microseconds
+  final Uint8List callerIdentity; // Identity: 32 bytes, NOT Option
+  final Uint8List
+      callerConnectionId; // ConnectionId: u128 (16 bytes), NOT Option
+  final ReducerInfo reducerCall; // ReducerCallInfo struct
+  final int
+      energyQuantaUsed; // EnergyQuanta: u128 - stored as int (will lose precision for huge values)
+  final Int64 totalHostExecutionDuration; // TimeDuration: i64 microseconds
 
   TransactionUpdateMessage({
     required this.transactionOffset,
@@ -139,10 +141,11 @@ class TransactionUpdateMessage implements ServerMessage {
         (energyBytes[3] << 24);
 
     // 7. Read total_host_execution_duration (TimeDuration: i64 microseconds)
-    final totalHostExecutionDuration = decoder.readU64(); // i64 serializes as u64
+    final totalHostExecutionDuration =
+        decoder.readU64(); // i64 serializes as u64
 
     return TransactionUpdateMessage(
-      transactionOffset: 0,  // Not in wire protocol
+      transactionOffset: 0, // Not in wire protocol
       timestamp: timestamp,
       tableUpdates: tableUpdates,
       status: status,
@@ -371,18 +374,23 @@ class SubscriptionErrorMessage implements ServerMessage {
   ServerMessageType get messageType => ServerMessageType.subscriptionError;
 
   static SubscriptionErrorMessage decode(BsatnDecoder decoder) {
+    // Field order must match Rust struct SubscriptionError exactly:
+    //   1. total_host_execution_duration_micros: u64
+    //   2. request_id: Option<u32>
+    //   3. query_id: Option<u32>
+    //   4. table_id: Option<TableId>  (TableId = u32)
+    //   5. error: Box<str>            (NOT Option — always present)
     final duration = decoder.readU64();
-    decoder.readOption(() => decoder.readU32());
-    final requestId = decoder.readU32();
-    decoder.readOption(() => decoder.readU32());
-    final queryId = decoder.readU32();
-    final error = decoder.readOption(() => decoder.readString()) ?? '';
+    final requestId = decoder.readOption(() => decoder.readU32()) ?? 0;
+    final queryId = decoder.readOption(() => decoder.readU32()) ?? 0;
+    final tableId = decoder.readOption(() => decoder.readU32()) ?? 0;
+    final error = decoder.readString();
 
     return SubscriptionErrorMessage(
       totalHostExecutionDurationMicros: duration,
       requestId: requestId,
       queryId: queryId,
-      tableId: 0,
+      tableId: tableId,
       error: error,
     );
   }

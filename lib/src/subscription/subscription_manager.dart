@@ -76,6 +76,10 @@ class SubscriptionManager {
   List<String> _pendingTableNames = [];
   final Set<String> _activeSubscriptionQueries = {};
 
+  /// Monotonically increasing query ID for SubscribeMulti messages.
+  /// Each subscription gets a unique queryId so the server can track them independently.
+  int _nextQueryId = 1;
+
   final OfflineStorage? _offlineStorage;
   bool _offlineStorageInitialized = false;
   bool _disposed = false;
@@ -181,7 +185,14 @@ class SubscriptionManager {
     if (_activeSubscriptionQueries.isNotEmpty) {
       SdkLogger.i(
           'Re-subscribing to ${_activeSubscriptionQueries.length} queries...');
-      final message = SubscribeMessage(_activeSubscriptionQueries.toList());
+      final queryId = _nextQueryId++;
+      final message = SubscribeMultiMessage(
+        _activeSubscriptionQueries.toList(),
+        requestId: 0,
+        queryId: queryId,
+      );
+      _pendingTableNames =
+          _extractTableNames(_activeSubscriptionQueries.toList());
       _connection.send(message.encode());
     } else {
       SdkLogger.i(
@@ -290,9 +301,18 @@ class SubscriptionManager {
       case UnsubscribeApplied():
         _unsubscribeAppliedController.add(message);
       case SubscriptionErrorMessage():
+        SdkLogger.e('SUBSCRIPTION_ERROR (queryId=${message.queryId}, '
+            'requestId=${message.requestId}): ${message.error}');
         _subscriptionErrorController.add(message);
       case SubscribeMultiApplied():
-        _subscribeMultiAppliedController.add(message);
+        _handleSubscribeMultiApplied(message).then((_) {
+          if (_disposed) return;
+          _subscribeMultiAppliedController.add(message);
+          SdkLogger.i(
+              'SubscribeMultiApplied processed (queryId=${message.queryId}), '
+              'syncing pending mutations...');
+          syncPendingMutations();
+        });
       case UnsubscribeMultiApplied():
         _unsubscribeMultiAppliedController.add(message);
       case ProcedureResultMessage():
@@ -366,6 +386,70 @@ class SubscriptionManager {
     await _persistTableSnapshots();
   }
 
+  /// Handles a [SubscribeMultiApplied] response from the server.
+  ///
+  /// Unlike the legacy [_handleInitialSubscription] which REPLACED the entire
+  /// subscription set (clearing all non-matching tables), this method is
+  /// **additive**: it only touches the tables included in this response,
+  /// leaving all other cached tables untouched.
+  ///
+  /// This matches the modern SpacetimeDB subscription model where each
+  /// `SubscribeMulti` creates an independent subscription that coexists
+  /// with all previously registered subscriptions.
+  Future<void> _handleSubscribeMultiApplied(
+      SubscribeMultiApplied message) async {
+    SdkLogger.i('Handling SubscribeMultiApplied (queryId=${message.queryId}) '
+        'with ${message.tableUpdates.length} table updates');
+
+    // Phase 1: Link tables to server IDs
+    for (final tableUpdate in message.tableUpdates) {
+      SdkLogger.i(
+          '  Linking table "${tableUpdate.tableName}" to ID ${tableUpdate.tableId}');
+      cache.linkTableId(tableUpdate.tableId, tableUpdate.tableName);
+    }
+
+    // Phase 2: Activate empty tables that were subscribed but have no rows.
+    // The server omits tables with 0 matching rows from the response.
+    final activatedTableNames =
+        message.tableUpdates.map((t) => t.tableName).toSet();
+    for (final tableName in _pendingTableNames) {
+      if (!activatedTableNames.contains(tableName)) {
+        if (cache.activateEmptyTable(tableName)) {
+          SdkLogger.i('  Activating empty table "$tableName"');
+        }
+      }
+    }
+    _pendingTableNames = [];
+
+    // Phase 3: Create EventContext
+    final event = SubscribeAppliedEvent();
+    final context = EventContext(
+      myConnectionId: _connectionId,
+      event: event,
+    );
+
+    // Phase 4: Apply data — ONLY for tables in THIS response.
+    // NO zombie cleanup of other tables (additive subscription model).
+    for (final tableUpdate in message.tableUpdates) {
+      if (!cache.hasTable(tableUpdate.tableId)) {
+        continue;
+      }
+
+      final table = cache.getTable(tableUpdate.tableId);
+      SdkLogger.i(
+          '  Table ${tableUpdate.tableId} ("${tableUpdate.tableName}"): '
+          '${tableUpdate.updates.length} updates');
+
+      for (final update in tableUpdate.updates) {
+        final rows = update.update.inserts.getRows();
+        SdkLogger.i('    Inserting ${rows.length} rows');
+        table.applyInitialData(update.update.inserts, context);
+      }
+    }
+
+    await _persistTableSnapshots();
+  }
+
   Future<void> _persistTableSnapshots() async {
     final storage = _offlineStorage;
     if (storage == null || _disposed) return;
@@ -394,9 +478,10 @@ class SubscriptionManager {
     // 1. Complete pending reducer Future (if we initiated this call)
     // 2. Update table cache and emit events (always happens)
 
-    // Get UUID before completing request (completeRequest removes it)
+    // Get UUID and pending status before completing request (completeRequest removes it)
     final numericRequestId = message.reducerCall.requestId;
     final uuidRequestId = reducers.getUuidForRequest(numericRequestId);
+    final hadPendingRequest = reducers.hasPendingRequest(numericRequestId);
     final effectiveRequestId = uuidRequestId ?? numericRequestId.toString();
 
     // Route to ReducerCaller first (completes Future if request_id matches)
@@ -450,7 +535,8 @@ class SubscriptionManager {
 
     // 5. Check if this is our own confirmed transaction with optimistic changes
     // If so, DON'T apply server data - our cache already has the correct state
-    final isOurTransaction = uuidRequestId != null;
+    // A transaction is ours if we have a UUID (offline mutation) OR if we had a pending request for this ID
+    final isOurTransaction = uuidRequestId != null || hadPendingRequest;
     final isCommitted = message.status is Committed;
     final hasOptimistic = cache.anyTableHasOptimisticChange(effectiveRequestId);
 
@@ -562,11 +648,14 @@ class SubscriptionManager {
     _persistTableSnapshots();
   }
 
-  /// Subscribes to tables using SQL queries
+  /// Subscribes to tables using SQL queries.
   ///
-  /// Returns a Future that completes when the initial subscription data
-  /// has been received and cached. This ensures data is available
-  /// immediately after the Future completes.
+  /// Uses the modern SubscribeMulti protocol (tag 4) which creates an
+  /// **additive** subscription — previous subscriptions remain active.
+  /// Each call gets a unique queryId so the server tracks them independently.
+  ///
+  /// Returns a Future that completes when the subscription data has been
+  /// received and cached (via SubscribeMultiApplied response).
   ///
   /// Example:
   /// ```dart
@@ -577,10 +666,42 @@ class SubscriptionManager {
     _activeSubscriptionQueries.addAll(queries);
     _pendingTableNames = _extractTableNames(queries);
 
-    final message = SubscribeMessage(queries);
+    final queryId = _nextQueryId++;
+    final message = SubscribeMultiMessage(
+      queries,
+      requestId: 0,
+      queryId: queryId,
+    );
     _connection.send(message.encode());
 
-    await onInitialSubscription.first;
+    // Race: wait for either success (SubscribeMultiApplied) or
+    // failure (SubscriptionErrorMessage).  Whichever arrives first wins.
+    final completer = Completer<void>();
+
+    StreamSubscription<SubscribeMultiApplied>? successSub;
+    StreamSubscription<SubscriptionErrorMessage>? errorSub;
+
+    successSub = onSubscribeMultiApplied.listen((msg) {
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
+      successSub?.cancel();
+      errorSub?.cancel();
+    });
+
+    errorSub = onSubscriptionError.listen((msg) {
+      if (!completer.isCompleted) {
+        // Remove the queries we just added — subscription was rejected.
+        _activeSubscriptionQueries.removeAll(queries);
+        completer.completeError(
+          Exception('Subscription rejected by server: ${msg.error}'),
+        );
+      }
+      successSub?.cancel();
+      errorSub?.cancel();
+    });
+
+    await completer.future;
   }
 
   /// Extract table names from SQL subscription queries

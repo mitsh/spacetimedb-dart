@@ -252,7 +252,19 @@ class TableGenerator {
         return '$fieldName?.toHexString';
       }
 
+      // Use null-aware ?. operator for simple method calls to avoid
+      // Dart's public field promotion limitation. For complex expressions
+      // that need the non-null value, use a local variable.
+      if (_isTimestamp(optionInnerType) ||
+          optionInnerType.containsKey('U64') ||
+          optionInnerType.containsKey('I64')) {
+        return '$fieldName?.toInt()';
+      }
+
       final inner = _getToJsonExpression(fieldName, optionInnerType);
+      if (inner == fieldName) {
+        return fieldName;
+      }
       return '$fieldName == null ? null : $inner';
     }
 

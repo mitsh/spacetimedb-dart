@@ -19,7 +19,7 @@ dependencies:
   flutter:
     sdk: flutter
   web_socket_channel: ^3.0.3
-  brotli: ">=0.5.0 <0.6.0"
+  brotli: ^0.5.0
   http: ^1.6.0
   fixnum: ^1.1.1
   uuid: ^4.5.2

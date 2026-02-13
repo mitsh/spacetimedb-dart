@@ -1,8 +1,10 @@
 import 'dart:typed_data';
 
+import 'package:brotli/brotli.dart';
 import 'package:fixnum/fixnum.dart';
 
 import '../codec/bsatn_decoder.dart';
+import '../utils/gzip_decoder.dart';
 
 /// Row list with optional size hint for efficient decoding
 class BsatnRowList {
@@ -31,7 +33,8 @@ class BsatnRowList {
     } else if (hintTag == 1) {
       // RowOffsets variant - read offset list
       final numOffsets = decoder.readU32();
-      final offsets = List<int>.generate(numOffsets, (_) => decoder.readU64().toInt());
+      final offsets =
+          List<int>.generate(numOffsets, (_) => decoder.readU64().toInt());
       sizeHint = RowSizeHint.rowOffsets(offsets);
     } else {
       throw ArgumentError('Unknown RowSizeHint tag: $hintTag');
@@ -72,14 +75,20 @@ class CompressableQueryUpdate {
     final tag = decoder.readU8();
 
     if (tag == 0) {
-      // Uncompressed variant
       return CompressableQueryUpdate(QueryUpdate.decode(decoder));
     } else if (tag == 1) {
-      // Brotli - read compressed bytes and decompress
-      throw UnimplementedError('Brotli compression not implemented');
+      final compressedData = decoder.readBytes(decoder.remaining);
+      final decompressed = Uint8List.fromList(brotli.decode(compressedData));
+      return CompressableQueryUpdate(
+        QueryUpdate.decode(BsatnDecoder(decompressed)),
+      );
     } else if (tag == 2) {
-      // Gzip - read compressed bytes and decompress
-      throw UnimplementedError('Gzip compression not implemented');
+      final compressedLength = decoder.readU32();
+      final compressedData = decoder.readBytes(compressedLength);
+      final decompressed = Uint8List.fromList(decodeGzip(compressedData));
+      return CompressableQueryUpdate(
+        QueryUpdate.decode(BsatnDecoder(decompressed)),
+      );
     }
 
     throw ArgumentError('Unknown CompressableQueryUpdate tag: $tag');

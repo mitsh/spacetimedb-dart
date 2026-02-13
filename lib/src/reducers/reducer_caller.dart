@@ -63,7 +63,8 @@ class ReducerCaller {
     bool queueIfOffline = true,
     List<OptimisticChange>? optimisticChanges,
   }) async {
-    SdkLogger.d('$reducerName: status=${_connection.status}, isOnline=$_isOnline, hasOfflineStorage=${_offlineStorage != null}');
+    SdkLogger.d(
+        '$reducerName: status=${_connection.status}, isOnline=$_isOnline, hasOfflineStorage=${_offlineStorage != null}');
 
     if (_offlineStorage != null) {
       SdkLogger.d('OFFLINE-FIRST: Always queue first, then sync');
@@ -125,7 +126,8 @@ class ReducerCaller {
       _timeoutRequest(requestId, reducerName, effectiveTimeout);
     });
 
-    final hasOptimistic = optimisticChanges != null && optimisticChanges.isNotEmpty;
+    final hasOptimistic =
+        optimisticChanges != null && optimisticChanges.isNotEmpty;
 
     _pendingRequests[requestId] = _PendingRequest(
       completer: completer,
@@ -217,8 +219,20 @@ class ReducerCaller {
     return _pendingRequests[requestId]?.uuidRequestId;
   }
 
+  /// Check if we have a pending request for the given numeric ID.
+  bool hasPendingRequest(int requestId) {
+    return _pendingRequests.containsKey(requestId);
+  }
+
   void completeRequest(int requestId, TransactionResult result) {
-    final pending = _pendingRequests.remove(requestId);
+    var pending = _pendingRequests.remove(requestId);
+
+    // SpacetimeDB sends requestId=0 for failed reducer calls.
+    // Fall back to matching by reducer name if requestId=0 and no exact match.
+    if (pending == null && requestId == 0 && result is TransactionResult) {
+      pending = _findPendingByReducerName(result.reducerName);
+    }
+
     if (pending == null) {
       return;
     }
@@ -239,6 +253,18 @@ class ReducerCaller {
         ),
       );
     }
+  }
+
+  /// Find and remove a pending request by reducer name.
+  /// Used as fallback when server returns requestId=0 for failed calls.
+  _PendingRequest? _findPendingByReducerName(String? reducerName) {
+    if (reducerName == null) return null;
+    for (final entry in _pendingRequests.entries) {
+      if (entry.value.reducerName == reducerName) {
+        return _pendingRequests.remove(entry.key);
+      }
+    }
+    return null;
   }
 
   void _timeoutRequest(int requestId, String reducerName, Duration timeout) {
