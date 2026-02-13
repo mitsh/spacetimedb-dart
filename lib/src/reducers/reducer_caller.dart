@@ -1,0 +1,314 @@
+import 'dart:async';
+import 'dart:typed_data';
+
+import 'package:spacetimedb/src/codec/bsatn_encoder.dart';
+import 'package:spacetimedb/src/connection/spacetimedb_connection.dart';
+import 'package:spacetimedb/src/connection/connection_status.dart';
+import 'package:spacetimedb/src/messages/client_messages.dart';
+import 'package:spacetimedb/src/reducers/transaction_result.dart';
+import 'package:spacetimedb/src/offline/offline_storage.dart';
+import 'package:spacetimedb/src/offline/pending_mutation.dart';
+import 'package:spacetimedb/src/utils/sdk_logger.dart';
+
+export 'package:spacetimedb/src/offline/optimistic_change.dart';
+import 'package:uuid/uuid.dart';
+
+class _PendingRequest {
+  final Completer<TransactionResult> completer;
+  final Timer timeout;
+  final String reducerName;
+  final String? uuidRequestId;
+  final bool hasOptimisticChanges;
+
+  _PendingRequest({
+    required this.completer,
+    required this.timeout,
+    required this.reducerName,
+    this.uuidRequestId,
+    this.hasOptimisticChanges = false,
+  });
+
+  void dispose() {
+    timeout.cancel();
+  }
+}
+
+class ReducerCaller {
+  final SpacetimeDbConnection _connection;
+  final OfflineStorage? _offlineStorage;
+  int _nextRequestId = 1;
+  final _uuid = const Uuid();
+
+  final Map<int, _PendingRequest> _pendingRequests = {};
+  final Map<String, int> _requestIdByUuid = {};
+
+  Duration defaultTimeout = const Duration(seconds: 10);
+
+  void Function(String requestId, List<OptimisticChange>? changes)?
+      onMutationQueued;
+  void Function(String requestId, List<OptimisticChange>? changes)?
+      onOptimisticChanges;
+  void Function(String requestId)? onRollbackOptimistic;
+  void Function()? onTrySyncNow;
+
+  ReducerCaller(this._connection, {OfflineStorage? offlineStorage})
+      : _offlineStorage = offlineStorage;
+
+  bool get _isOnline => _connection.status == ConnectionStatus.connected;
+
+  Future<TransactionResult> call(
+    String reducerName,
+    Uint8List args, {
+    Duration? timeout,
+    bool queueIfOffline = true,
+    List<OptimisticChange>? optimisticChanges,
+  }) async {
+    SdkLogger.d('$reducerName: status=${_connection.status}, isOnline=$_isOnline, hasOfflineStorage=${_offlineStorage != null}');
+
+    if (_offlineStorage != null) {
+      SdkLogger.d('OFFLINE-FIRST: Always queue first, then sync');
+      return _queueAndMaybeSync(reducerName, args, optimisticChanges);
+    }
+
+    SdkLogger.d('NO OFFLINE STORAGE: Direct send (legacy path)');
+    return _sendDirectly(reducerName, args, timeout, optimisticChanges);
+  }
+
+  Future<TransactionResult> _queueAndMaybeSync(
+    String reducerName,
+    Uint8List args,
+    List<OptimisticChange>? optimisticChanges,
+  ) async {
+    final requestId = _uuid.v4();
+
+    if (optimisticChanges != null && optimisticChanges.isNotEmpty) {
+      SdkLogger.d('Applying optimistic changes immediately...');
+      onOptimisticChanges?.call(requestId, optimisticChanges);
+    }
+
+    SdkLogger.d('Queuing $reducerName to disk (requestId=$requestId)');
+    final mutation = PendingMutation(
+      requestId: requestId,
+      reducerName: reducerName,
+      encodedArgs: args,
+      createdAt: DateTime.now(),
+      optimisticChanges: optimisticChanges,
+    );
+
+    await _offlineStorage!.enqueueMutation(mutation);
+    onMutationQueued?.call(requestId, optimisticChanges);
+
+    if (_isOnline) {
+      SdkLogger.d('Online, triggering immediate sync...');
+      onTrySyncNow?.call();
+    } else {
+      SdkLogger.d('Offline, mutation queued for later sync');
+    }
+
+    return TransactionResult.pending(
+      reducerName: reducerName,
+      requestId: requestId,
+    );
+  }
+
+  Future<TransactionResult> _sendDirectly(
+    String reducerName,
+    Uint8List args,
+    Duration? timeout,
+    List<OptimisticChange>? optimisticChanges,
+  ) async {
+    final requestId = _nextRequestId++;
+    final completer = Completer<TransactionResult>();
+    final effectiveTimeout = timeout ?? defaultTimeout;
+
+    final timer = Timer(effectiveTimeout, () {
+      _timeoutRequest(requestId, reducerName, effectiveTimeout);
+    });
+
+    final hasOptimistic = optimisticChanges != null && optimisticChanges.isNotEmpty;
+
+    _pendingRequests[requestId] = _PendingRequest(
+      completer: completer,
+      timeout: timer,
+      reducerName: reducerName,
+      hasOptimisticChanges: hasOptimistic,
+    );
+
+    if (hasOptimistic) {
+      SdkLogger.d('Applying optimistic changes: ${optimisticChanges.length}');
+      onOptimisticChanges?.call(requestId.toString(), optimisticChanges);
+    }
+
+    final message = CallReducerMessage(
+      reducerName: reducerName,
+      args: args,
+      requestId: requestId,
+    );
+    _connection.send(message.encode());
+
+    return completer.future;
+  }
+
+  Future<TransactionResult> callWithBytes(
+    String reducerName,
+    Uint8List args, {
+    Duration? timeout,
+    String? requestId,
+  }) async {
+    final numericRequestId = _nextRequestId++;
+    if (requestId != null) {
+      _requestIdByUuid[requestId] = numericRequestId;
+    }
+
+    final completer = Completer<TransactionResult>();
+    final effectiveTimeout = timeout ?? defaultTimeout;
+
+    final timer = Timer(effectiveTimeout, () {
+      _timeoutRequest(numericRequestId, reducerName, effectiveTimeout);
+    });
+
+    _pendingRequests[numericRequestId] = _PendingRequest(
+      completer: completer,
+      timeout: timer,
+      reducerName: reducerName,
+      uuidRequestId: requestId,
+    );
+
+    final message = CallReducerMessage(
+      reducerName: reducerName,
+      args: args,
+      requestId: numericRequestId,
+    );
+    _connection.send(message.encode());
+
+    return completer.future;
+  }
+
+  /// Helper to call reducer with a callback to encode arguments
+  ///
+  /// Example:
+  /// ```dart
+  /// final result = await reducer.callWith("create_note", (encoder) {
+  ///   encoder.writeString("My Note");
+  ///   encoder.writeString("Note content here");
+  /// });
+  /// ```
+  Future<TransactionResult> callWith(
+    String reducerName,
+    void Function(BsatnEncoder encoder) encodeArgs, {
+    Duration? timeout,
+    bool queueIfOffline = true,
+    List<OptimisticChange>? optimisticChanges,
+  }) async {
+    final encoder = BsatnEncoder();
+    encodeArgs(encoder);
+    return call(
+      reducerName,
+      encoder.toBytes(),
+      timeout: timeout,
+      queueIfOffline: queueIfOffline,
+      optimisticChanges: optimisticChanges,
+    );
+  }
+
+  /// Get the UUID request ID for a numeric request ID (if one exists)
+  /// Returns the UUID if this was an offline mutation, null otherwise
+  String? getUuidForRequest(int requestId) {
+    return _pendingRequests[requestId]?.uuidRequestId;
+  }
+
+  void completeRequest(int requestId, TransactionResult result) {
+    final pending = _pendingRequests.remove(requestId);
+    if (pending == null) {
+      return;
+    }
+
+    pending.dispose();
+    if (pending.uuidRequestId != null) {
+      _requestIdByUuid.remove(pending.uuidRequestId);
+    }
+
+    if (result.isSuccess) {
+      pending.completer.complete(result);
+    } else {
+      pending.completer.completeError(
+        ReducerException(
+          reducerName: pending.reducerName,
+          message: result.errorMessage ?? 'Unknown error',
+          result: result,
+        ),
+      );
+    }
+  }
+
+  void _timeoutRequest(int requestId, String reducerName, Duration timeout) {
+    final pending = _pendingRequests.remove(requestId);
+    if (pending != null) {
+      if (pending.uuidRequestId != null) {
+        _requestIdByUuid.remove(pending.uuidRequestId);
+      }
+      if (pending.hasOptimisticChanges) {
+        onRollbackOptimistic?.call(requestId.toString());
+      }
+      pending.completer.completeError(
+        TimeoutException(
+          'Reducer "$reducerName" timed out after ${timeout.inSeconds}s',
+          timeout,
+        ),
+      );
+    }
+  }
+
+  void failAllPendingRequests(String reason) {
+    final entries = _pendingRequests.entries.toList();
+    for (var entry in entries) {
+      final requestId = entry.key;
+      final pending = entry.value;
+      pending.dispose();
+      if (pending.hasOptimisticChanges) {
+        onRollbackOptimistic?.call(requestId.toString());
+      }
+      pending.completer.completeError(
+        ConnectionException(
+          'Connection lost during reducer call: $reason',
+        ),
+      );
+    }
+    _pendingRequests.clear();
+    _requestIdByUuid.clear();
+  }
+
+  void dispose() {
+    for (var pending in _pendingRequests.values) {
+      pending.dispose();
+    }
+    _pendingRequests.clear();
+    _requestIdByUuid.clear();
+  }
+}
+
+/// Exception thrown when a reducer fails
+class ReducerException implements Exception {
+  final String reducerName;
+  final String message;
+  final TransactionResult result;
+
+  ReducerException({
+    required this.reducerName,
+    required this.message,
+    required this.result,
+  });
+
+  @override
+  String toString() => 'ReducerException($reducerName): $message';
+}
+
+/// Exception thrown when connection is lost during reducer call
+class ConnectionException implements Exception {
+  final String message;
+
+  ConnectionException(this.message);
+
+  @override
+  String toString() => 'ConnectionException: $message';
+}

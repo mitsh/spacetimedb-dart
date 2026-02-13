@@ -1,0 +1,25 @@
+# Dart test configuration
+# Runs setup before all tests to ensure SpacetimeDB is ready
+
+# Global timeout for all tests
+timeout: 30s
+
+# Paths
+paths:
+  - test/
+
+# Tags for organizing tests
+tags:
+  integration:
+    # Integration tests need more time
+    timeout: 60s
+  unit:
+    # Unit tests are fast
+    timeout: 10s
+
+# Platforms
+platforms:
+  - vm
+
+# Test randomization
+test_randomize_ordering_seed: random
