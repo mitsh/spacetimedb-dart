@@ -1,34 +1,49 @@
+import 'dart:developer' as developer;
+
+/// Callback type for custom log handling.
 typedef SdkLogCallback = void Function(String level, String message);
 
+/// SDK logger with no-op default behavior.
+///
+/// By default, all log methods are no-ops. To enable logging, set [onLog]
+/// to a custom callback, or call [enableDeveloperLog] to route logs through
+/// `dart:developer`.
+///
+/// Example:
+/// ```dart
+/// // Option 1: Custom callback
+/// SdkLogger.onLog = (level, msg) => print('[$level] $msg');
+///
+/// // Option 2: Use dart:developer (shows in DevTools)
+/// SdkLogger.enableDeveloperLog();
+/// ```
 class SdkLogger {
+  /// Custom log callback. When set, all log methods route here.
+  /// When null (default), all log methods are no-ops.
   static SdkLogCallback? onLog;
 
-  static void d(String msg) {
-    if (onLog != null) {
-      onLog!('D', msg);
-    } else {
-      final loc = _getLocation();
-      final div = '─' * 60;
-      print('┌$div');
-      print('│ 🐛 [SPDB] $msg');
-      print('│ at $loc');
-      print('└$div');
-    }
+  /// Enable logging via `dart:developer` (visible in DevTools/Observatory).
+  static void enableDeveloperLog() {
+    onLog = (level, msg) {
+      final logLevel = switch (level) {
+        'E' => 1000, // SEVERE
+        'W' => 900, // WARNING
+        'I' => 800, // INFO
+        _ => 500, // FINE (debug)
+      };
+      developer.log(msg, name: 'spacetimedb', level: logLevel);
+    };
   }
 
-  static void i(String msg) =>
-      onLog != null ? onLog!('I', msg) : print('📘 [SPDB] $msg');
-  static void w(String msg) =>
-      onLog != null ? onLog!('W', msg) : print('⚠️ [SPDB] $msg');
-  static void e(String msg) =>
-      onLog != null ? onLog!('E', msg) : print('❌ [SPDB] $msg');
+  /// Debug log — no-op unless [onLog] is set.
+  static void d(String msg) => onLog?.call('D', msg);
 
-  static String _getLocation() {
-    for (final line in StackTrace.current.toString().split('\n')) {
-      if (line.contains('sdk_logger.dart')) continue;
-      final m = RegExp(r'\(([^)]+):(\d+):\d+\)').firstMatch(line);
-      if (m != null) return '${m.group(1)!.split('/').last}:${m.group(2)}';
-    }
-    return 'unknown';
-  }
+  /// Info log — no-op unless [onLog] is set.
+  static void i(String msg) => onLog?.call('I', msg);
+
+  /// Warning log — no-op unless [onLog] is set.
+  static void w(String msg) => onLog?.call('W', msg);
+
+  /// Error log — no-op unless [onLog] is set.
+  static void e(String msg) => onLog?.call('E', msg);
 }

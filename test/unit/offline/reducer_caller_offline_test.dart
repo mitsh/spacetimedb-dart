@@ -83,7 +83,8 @@ class MockOfflineConnection implements SpacetimeDbConnection {
   @override
   ConnectionConfig get config => const ConnectionConfig();
   @override
-  Future<void> callReducer(String reducerName, Uint8List args, {int? requestId}) async {
+  Future<void> callReducer(String reducerName, Uint8List args,
+      {int? requestId}) async {
     throw UnimplementedError();
   }
 
@@ -120,13 +121,15 @@ void main() {
       await storage.dispose();
     });
 
-    test('queues first then triggers sync when online (offline-first)', () async {
+    test('queues first then triggers sync when online (offline-first)',
+        () async {
       connection.setOnline();
 
       var syncTriggered = false;
       caller.onTrySyncNow = () => syncTriggered = true;
 
-      final result = await caller.call('create_note', Uint8List.fromList([1, 2, 3]));
+      final result =
+          await caller.call('create_note', Uint8List.fromList([1, 2, 3]));
 
       expect(result.isPending, isTrue);
       expect(syncTriggered, isTrue);
@@ -137,7 +140,9 @@ void main() {
     test('queues mutation when offline', () async {
       connection.setOffline();
 
-      final result = await caller.call('create_note', Uint8List.fromList([1, 2, 3])).timeout(_timeout);
+      final result = await caller
+          .call('create_note', Uint8List.fromList([1, 2, 3]))
+          .timeout(_timeout);
 
       expect(result.isPending, isTrue);
       expect(result.pendingRequestId, isNotNull);
@@ -148,14 +153,11 @@ void main() {
       expect(pending.first.reducerName, equals('create_note'));
     });
 
-    test('offline-first always queues regardless of queueIfOffline flag', () async {
+    test('offline-first always queues mutations', () async {
       connection.setOffline();
 
-      final result = await caller.call(
-        'create_note',
-        Uint8List.fromList([1, 2, 3]),
-        queueIfOffline: false,
-      );
+      final result =
+          await caller.call('create_note', Uint8List.fromList([1, 2, 3]));
 
       expect(result.isPending, isTrue);
       final pending = await storage.getPendingMutations().timeout(_timeout);
@@ -182,7 +184,8 @@ void main() {
       final noStorageCaller = ReducerCaller(connection);
       connection.setOffline();
 
-      final future = noStorageCaller.call('create_note', Uint8List.fromList([1, 2, 3]));
+      final future =
+          noStorageCaller.call('create_note', Uint8List.fromList([1, 2, 3]));
 
       expect(connection.sentMessages.length, equals(1));
 
@@ -193,8 +196,10 @@ void main() {
     test('generates unique request IDs for queued mutations', () async {
       connection.setOffline();
 
-      final r1 = await caller.call('r1', Uint8List.fromList([1])).timeout(_timeout);
-      final r2 = await caller.call('r2', Uint8List.fromList([2])).timeout(_timeout);
+      final r1 =
+          await caller.call('r1', Uint8List.fromList([1])).timeout(_timeout);
+      final r2 =
+          await caller.call('r2', Uint8List.fromList([2])).timeout(_timeout);
 
       expect(r1.pendingRequestId, isNot(equals(r2.pendingRequestId)));
     });

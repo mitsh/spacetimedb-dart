@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 import '../offline_storage.dart';
 import '../pending_mutation.dart';
 import '../../utils/sdk_logger.dart';
@@ -26,6 +28,12 @@ class _AsyncLock {
 
 class JsonFileStorage implements OfflineStorage {
   final String basePath;
+
+  /// Sanitize table name to prevent path traversal and ensure valid filenames.
+  static String _sanitizeTableName(String name) {
+    // Replace any non-alphanumeric/underscore/hyphen characters with underscore
+    return name.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
+  }
 
   Directory? _baseDir;
   File? _mutationsFile;
@@ -71,8 +79,8 @@ class JsonFileStorage implements OfflineStorage {
     if (!await _baseDir!.exists()) {
       await _baseDir!.create(recursive: true);
     }
-    _mutationsFile = File('$basePath/pending_mutations.json');
-    _syncTimesFile = File('$basePath/sync_times.json');
+    _mutationsFile = File(p.join(basePath, 'pending_mutations.json'));
+    _syncTimesFile = File(p.join(basePath, 'sync_times.json'));
 
     await _recoverFromTempFiles();
     _initialized = true;
@@ -98,7 +106,8 @@ class JsonFileStorage implements OfflineStorage {
     }
   }
 
-  File _tableFile(String tableName) => File('$basePath/table_$tableName.json');
+  File _tableFile(String tableName) =>
+      File(p.join(basePath, 'table_${_sanitizeTableName(tableName)}.json'));
 
   Future<void> _atomicWrite(File file, String content) async {
     final tempFile = File('${file.path}.tmp');

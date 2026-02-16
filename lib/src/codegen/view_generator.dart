@@ -2,10 +2,10 @@ import 'package:spacetimedb/src/codegen/models.dart';
 
 /// View return type pattern
 enum ViewReturnType {
-  /// Returns Vec<T> - multiple rows
+  /// Returns `Vec<T>` - multiple rows
   array,
 
-  /// Returns Option<T> - single optional row
+  /// Returns `Option<T>` - single optional row
   option,
 
   /// Returns T directly - single row

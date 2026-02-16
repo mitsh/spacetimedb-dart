@@ -27,7 +27,7 @@ dependencies:
 Then install dependencies:
 
 ```bash
-flutter pub get
+dart pub get
 ```
 
 ## Quick Start
@@ -150,6 +150,41 @@ dart run spacetimedb:generate -p path/to/spacetimedb-module -o lib/generated
 | `BsatnEncoder` / `BsatnDecoder` | Encode/decode BSATN payloads |
 | `AuthTokenStore` | Plug in custom token persistence |
 | `OfflineStorage` | Persist cached data and mutation queue for offline-first flows |
+
+## Platform Support
+
+| Platform | Runtime | Code Generation | Offline (File) |
+| --- | --- | --- | --- |
+| Android | Yes | Yes | Yes |
+| iOS | Yes | Yes | Yes |
+| macOS | Yes | Yes | Yes |
+| Windows | Yes | Yes | Yes |
+| Linux | Yes | Yes | Yes |
+| Web | Yes | N/A | No* |
+
+\* Web builds use `InMemoryOfflineStorage`. File-based `JsonFileStorage` requires `dart:io` and is not available on web. The SDK automatically provides a web-compatible stub that throws `UnsupportedError` if you try to use `JsonFileStorage` on web.
+
+## Security Considerations
+
+- **Offline storage is unencrypted.** Table snapshots and pending mutations are stored as plaintext JSON. Do not persist sensitive data (passwords, tokens, PII) without app-level encryption.
+- **Use `ssl: true` in production.** Without SSL, authentication tokens are sent in plaintext over the network.
+- **Web platform auth tokens** are passed as URL query parameters (WebSocket API limitation). These tokens are short-lived, but may appear in proxy logs. Always use SSL in production.
+- **Token storage** is pluggable via `AuthTokenStore`. For production apps, implement a secure storage backend (e.g., `flutter_secure_storage`).
+
+## Logging
+
+By default, the SDK produces no log output. To enable logging:
+
+```dart
+// Option 1: Route to dart:developer (visible in DevTools)
+SdkLogger.enableDeveloperLog();
+
+// Option 2: Custom callback
+SdkLogger.onLog = (level, message) {
+  // 'D' = debug, 'I' = info, 'W' = warning, 'E' = error
+  print('[$level] $message');
+};
+```
 
 ## License
 

@@ -141,7 +141,7 @@ class SubscriptionManager {
       SdkLogger.d('Sync already in progress, skipping duplicate trigger');
       return;
     }
-    SdkLogger.i('Immediate sync triggered by reducer call');
+    SdkLogger.d('Immediate sync triggered by reducer call');
     syncPendingMutations();
   }
 
@@ -183,7 +183,7 @@ class SubscriptionManager {
 
   Future<void> _onReconnected() async {
     if (_activeSubscriptionQueries.isNotEmpty) {
-      SdkLogger.i(
+      SdkLogger.d(
           'Re-subscribing to ${_activeSubscriptionQueries.length} queries...');
       final queryId = _nextQueryId++;
       final message = SubscribeMultiMessage(
@@ -195,7 +195,7 @@ class SubscriptionManager {
           _extractTableNames(_activeSubscriptionQueries.toList());
       _connection.send(message.encode());
     } else {
-      SdkLogger.i(
+      SdkLogger.d(
           'No active subscriptions, syncing pending mutations directly...');
       syncPendingMutations();
     }
@@ -257,7 +257,7 @@ class SubscriptionManager {
   /// Handle incoming binary messages
   void _handleMessage(Uint8List bytes) {
     if (_disposed) return;
-    SdkLogger.i('WS_MSG: ${bytes.length} bytes received');
+    SdkLogger.d('WS_MSG: ${bytes.length} bytes received');
     try {
       final message = MessageDecoder.decode(bytes);
       _routeMessage(message);
@@ -269,7 +269,7 @@ class SubscriptionManager {
   /// Route decoded messages to appropriate streams
   void _routeMessage(ServerMessage message) {
     if (_disposed) return;
-    SdkLogger.i('ROUTE_MSG: ${message.runtimeType}');
+    SdkLogger.d('ROUTE_MSG: ${message.runtimeType}');
     switch (message) {
       case IdentityTokenMessage():
         // Store identity and address for public access
@@ -284,7 +284,7 @@ class SubscriptionManager {
           if (_disposed) return;
           _initialSubscriptionReceived = true;
           _initialSubscriptionController.add(message);
-          SdkLogger.i(
+          SdkLogger.d(
               'Syncing pending mutations after initial subscription...');
           syncPendingMutations();
         });
@@ -308,7 +308,7 @@ class SubscriptionManager {
         _handleSubscribeMultiApplied(message).then((_) {
           if (_disposed) return;
           _subscribeMultiAppliedController.add(message);
-          SdkLogger.i(
+          SdkLogger.d(
               'SubscribeMultiApplied processed (queryId=${message.queryId}), '
               'syncing pending mutations...');
           syncPendingMutations();
@@ -322,12 +322,12 @@ class SubscriptionManager {
 
   Future<void> _handleInitialSubscription(
       InitialSubscriptionMessage message) async {
-    SdkLogger.i(
+    SdkLogger.d(
         'Handling InitialSubscription with ${message.tableUpdates.length} table updates');
 
     // Phase 1: Link tables to server IDs (preserving existing TableCache instances from offline cache)
     for (final tableUpdate in message.tableUpdates) {
-      SdkLogger.i(
+      SdkLogger.d(
           '  Linking table "${tableUpdate.tableName}" to ID ${tableUpdate.tableId}');
       cache.linkTableId(tableUpdate.tableId, tableUpdate.tableName);
     }
@@ -340,7 +340,7 @@ class SubscriptionManager {
       if (!activatedTableNames.contains(tableName)) {
         // Table was subscribed but has no rows - activate it as empty
         if (cache.activateEmptyTable(tableName)) {
-          SdkLogger.i('  Activating empty table "$tableName"');
+          SdkLogger.d('  Activating empty table "$tableName"');
         }
       }
     }
@@ -371,14 +371,14 @@ class SubscriptionManager {
       }
 
       final table = cache.getTable(tableUpdate.tableId);
-      SdkLogger.i(
+      SdkLogger.d(
           '  Table ${tableUpdate.tableId} ("${tableUpdate.tableName}"): ${tableUpdate.updates.length} updates');
 
       table.clearNonOptimisticRows();
 
       for (final update in tableUpdate.updates) {
         final rows = update.update.inserts.getRows();
-        SdkLogger.i('    Inserting ${rows.length} rows');
+        SdkLogger.d('    Inserting ${rows.length} rows');
         table.applyInitialData(update.update.inserts, context);
       }
     }
@@ -398,12 +398,12 @@ class SubscriptionManager {
   /// with all previously registered subscriptions.
   Future<void> _handleSubscribeMultiApplied(
       SubscribeMultiApplied message) async {
-    SdkLogger.i('Handling SubscribeMultiApplied (queryId=${message.queryId}) '
+    SdkLogger.d('Handling SubscribeMultiApplied (queryId=${message.queryId}) '
         'with ${message.tableUpdates.length} table updates');
 
     // Phase 1: Link tables to server IDs
     for (final tableUpdate in message.tableUpdates) {
-      SdkLogger.i(
+      SdkLogger.d(
           '  Linking table "${tableUpdate.tableName}" to ID ${tableUpdate.tableId}');
       cache.linkTableId(tableUpdate.tableId, tableUpdate.tableName);
     }
@@ -415,7 +415,7 @@ class SubscriptionManager {
     for (final tableName in _pendingTableNames) {
       if (!activatedTableNames.contains(tableName)) {
         if (cache.activateEmptyTable(tableName)) {
-          SdkLogger.i('  Activating empty table "$tableName"');
+          SdkLogger.d('  Activating empty table "$tableName"');
         }
       }
     }
@@ -436,13 +436,13 @@ class SubscriptionManager {
       }
 
       final table = cache.getTable(tableUpdate.tableId);
-      SdkLogger.i(
+      SdkLogger.d(
           '  Table ${tableUpdate.tableId} ("${tableUpdate.tableName}"): '
           '${tableUpdate.updates.length} updates');
 
       for (final update in tableUpdate.updates) {
         final rows = update.update.inserts.getRows();
-        SdkLogger.i('    Inserting ${rows.length} rows');
+        SdkLogger.d('    Inserting ${rows.length} rows');
         table.applyInitialData(update.update.inserts, context);
       }
     }
@@ -468,10 +468,10 @@ class SubscriptionManager {
   }
 
   void _handleTransactionUpdate(TransactionUpdateMessage message) {
-    SdkLogger.i(
+    SdkLogger.d(
         'TXN_UPDATE: reducer=${message.reducerCall.reducerName}, tables=${message.tableUpdates.length}');
     for (final tu in message.tableUpdates) {
-      SdkLogger.i('  TABLE: ${tu.tableName}, updates=${tu.updates.length}');
+      SdkLogger.d('  TABLE: ${tu.tableName}, updates=${tu.updates.length}');
     }
 
     // DUAL DISPATCH: This message serves two purposes:
@@ -510,14 +510,13 @@ class SubscriptionManager {
         reducerArgs: reducerArgs,
       );
 
-      SdkLogger.i(
+      SdkLogger.d(
           'Transaction caused by reducer: ${message.reducerCall.reducerName}');
-      SdkLogger.i('Arguments: $reducerArgs');
-      SdkLogger.i('Status: ${message.status}');
+      SdkLogger.d('Status: ${message.status}');
     } else {
       // Deserialization failed - unknown reducer or corrupt data
       event = UnknownTransactionEvent();
-      SdkLogger.i(
+      SdkLogger.d(
           'Failed to deserialize reducer args for: ${message.reducerCall.reducerName}');
     }
 
@@ -530,7 +529,7 @@ class SubscriptionManager {
     // 4. Emit reducer completion event (Phase 4)
     if (event is ReducerEvent) {
       reducerEmitter.emit(event.reducerName, context);
-      SdkLogger.i('Emitted reducer completion event for: ${event.reducerName}');
+      SdkLogger.d('Emitted reducer completion event for: ${event.reducerName}');
     }
 
     // 5. Check if this is our own confirmed transaction with optimistic changes
@@ -547,7 +546,7 @@ class SubscriptionManager {
 
     if (isOurTransaction && isCommitted && hasOptimistic) {
       // Our confirmed transaction - just confirm optimistic changes, don't overwrite cache
-      SdkLogger.i('✅ Our transaction confirmed - keeping optimistic state');
+      SdkLogger.d('✅ Our transaction confirmed - keeping optimistic state');
       cache.confirmAllOptimisticChanges(effectiveRequestId);
       _persistTableSnapshots();
       return;
@@ -587,7 +586,7 @@ class SubscriptionManager {
   }
 
   void _handleTransactionUpdateLight(TransactionUpdateLightMessage message) {
-    SdkLogger.i(
+    SdkLogger.d(
         'TXN_LIGHT: requestId=${message.requestId}, tables=${message.tableUpdates.length}');
 
     // DUAL DISPATCH: Handle both reducer completion and table updates
@@ -611,7 +610,7 @@ class SubscriptionManager {
     // Light messages are always successful (committed)
     // If this is our transaction with optimistic changes, DON'T apply server data
     if (isOurTransaction && hasOptimistic) {
-      SdkLogger.i(
+      SdkLogger.d(
           '✅ Our light transaction confirmed - keeping optimistic state');
       cache.confirmAllOptimisticChanges(effectiveRequestId);
       _persistTableSnapshots();
@@ -872,7 +871,7 @@ class SubscriptionManager {
           final table = cache.getTableByName(tableName);
           if (table != null && table.decoder.supportsJsonSerialization) {
             table.loadFromSerializable(rows);
-            SdkLogger.i(
+            SdkLogger.d(
                 'Loaded ${rows.length} rows from offline cache for "$tableName"');
           }
         }
@@ -1016,12 +1015,12 @@ class SubscriptionManager {
         pendingCount: _cachedPendingCount,
       ));
 
-      SdkLogger.i('Syncing ${pending.length} pending mutations');
+      SdkLogger.d('Syncing ${pending.length} pending mutations');
 
       for (final mutation in pending) {
         if (_disposed) return;
         if (_connection.status != ConnectionStatus.connected) {
-          SdkLogger.i('Connection lost during sync. Pausing queue.');
+          SdkLogger.d('Connection lost during sync. Pausing queue.');
           break;
         }
 
@@ -1037,7 +1036,7 @@ class SubscriptionManager {
           if (result.isSuccess) {
             await storage.dequeueMutation(mutation.requestId);
             _decrementPendingCount();
-            SdkLogger.i('Synced mutation: ${mutation.reducerName}');
+            SdkLogger.d('Synced mutation: ${mutation.reducerName}');
             if (!_disposed) {
               _mutationSyncResultController.add(MutationSyncResult(
                 requestId: mutation.requestId,
@@ -1120,13 +1119,13 @@ class SubscriptionManager {
     );
     _retryAttempt++;
 
-    SdkLogger.i(
+    SdkLogger.d(
         'Scheduling sync retry in ${delay.inSeconds}s (attempt $_retryAttempt)');
 
     _retryTimer = Timer(delay, () {
       if (_disposed) return;
       if (_connection.status == ConnectionStatus.connected) {
-        SdkLogger.i('Auto-retry: syncing pending mutations');
+        SdkLogger.d('Auto-retry: syncing pending mutations');
         syncPendingMutations();
       }
     });

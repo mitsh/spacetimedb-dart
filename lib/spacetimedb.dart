@@ -1,5 +1,3 @@
-library spacetimedb;
-
 // Re-export Int64 from fixnum for web-compatible 64-bit integers
 export 'package:fixnum/fixnum.dart' show Int64;
 
@@ -50,7 +48,7 @@ export 'src/auth/identity.dart';
 export 'src/offline/offline_storage.dart';
 export 'src/offline/pending_mutation.dart';
 export 'src/offline/sync_state.dart';
-export 'src/offline/impl/json_file_storage.dart';
+export 'src/offline/impl/json_file_storage_export.dart';
 
 // Utils
 export 'src/utils/sdk_logger.dart';

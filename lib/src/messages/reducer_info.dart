@@ -28,7 +28,7 @@ class ReducerInfo {
   });
 
   /// Decode ReducerCallInfo from BSATN bytes
-  /// Rust struct order: reducer_name, reducer_id, args (Vec<u8>), request_id
+  /// Rust struct order: reducer_name, reducer_id, args (`Vec<u8>`), request_id
   static ReducerInfo decode(BsatnDecoder decoder) {
     final reducerName = decoder.readString();
     final reducerId = decoder.readU32();
@@ -45,5 +45,6 @@ class ReducerInfo {
   }
 
   @override
-  String toString() => 'ReducerInfo(reducerName: $reducerName, reducerId: $reducerId, args: ${args.length} bytes, requestId: $requestId)';
+  String toString() =>
+      'ReducerInfo(reducerName: $reducerName, reducerId: $reducerId, args: ${args.length} bytes, requestId: $requestId)';
 }

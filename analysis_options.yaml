@@ -4,5 +4,3 @@ analyzer:
   exclude:
     - "**/*.g.dart"
     - "test/generated/**"
-  errors:
-    avoid_print: ignore

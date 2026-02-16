@@ -156,14 +156,15 @@ class SpacetimeDbConnection {
 
     try {
       final httpProtocol = ssl ? 'https' : 'http';
-      final url = Uri.parse('$httpProtocol://$host/v1/identity/websocket-token');
+      final url =
+          Uri.parse('$httpProtocol://$host/v1/identity/websocket-token');
 
       final response = await http.post(
         url,
         headers: {
           'Authorization': 'Bearer $_currentToken',
         },
-      );
+      ).timeout(config.connectTimeout);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -292,7 +293,8 @@ class SpacetimeDbConnection {
     );
 
     if (_currentStatus != _lastLoggedStatus) {
-      SdkLogger.i('Connection: ${quality.status.name} (health=${quality.healthScore.toStringAsFixed(1)})');
+      SdkLogger.i(
+          'Connection: ${quality.status.name} (health=${quality.healthScore.toStringAsFixed(1)})');
       _lastLoggedStatus = _currentStatus;
     }
     _qualityController.add(quality);
@@ -401,7 +403,8 @@ class SpacetimeDbConnection {
       try {
         await connect();
       } on SpacetimeDbAuthException {
-        SdkLogger.e('Authentication failed during reconnect - token may be invalid');
+        SdkLogger.e(
+            'Authentication failed during reconnect - token may be invalid');
         _shouldReconnect = false;
         _updateStatus(ConnectionStatus.authError);
       } catch (e) {

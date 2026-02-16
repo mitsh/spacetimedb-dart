@@ -60,7 +60,6 @@ class ReducerCaller {
     String reducerName,
     Uint8List args, {
     Duration? timeout,
-    bool queueIfOffline = true,
     List<OptimisticChange>? optimisticChanges,
   }) async {
     SdkLogger.d(
@@ -199,7 +198,6 @@ class ReducerCaller {
     String reducerName,
     void Function(BsatnEncoder encoder) encodeArgs, {
     Duration? timeout,
-    bool queueIfOffline = true,
     List<OptimisticChange>? optimisticChanges,
   }) async {
     final encoder = BsatnEncoder();
@@ -208,7 +206,6 @@ class ReducerCaller {
       reducerName,
       encoder.toBytes(),
       timeout: timeout,
-      queueIfOffline: queueIfOffline,
       optimisticChanges: optimisticChanges,
     );
   }
@@ -229,7 +226,7 @@ class ReducerCaller {
 
     // SpacetimeDB sends requestId=0 for failed reducer calls.
     // Fall back to matching by reducer name if requestId=0 and no exact match.
-    if (pending == null && requestId == 0 && result is TransactionResult) {
+    if (pending == null && requestId == 0) {
       pending = _findPendingByReducerName(result.reducerName);
     }
 
@@ -257,12 +254,24 @@ class ReducerCaller {
 
   /// Find and remove a pending request by reducer name.
   /// Used as fallback when server returns requestId=0 for failed calls.
+  ///
+  /// Safety: only matches when there is exactly ONE pending request for
+  /// that reducer name. With multiple concurrent calls, we cannot
+  /// determine which one failed, so we return null to avoid completing
+  /// the wrong Future.
   _PendingRequest? _findPendingByReducerName(String? reducerName) {
     if (reducerName == null) return null;
+    MapEntry<int, _PendingRequest>? match;
+    int matchCount = 0;
     for (final entry in _pendingRequests.entries) {
       if (entry.value.reducerName == reducerName) {
-        return _pendingRequests.remove(entry.key);
+        match = entry;
+        matchCount++;
+        if (matchCount > 1) return null; // Ambiguous — don't guess
       }
+    }
+    if (match != null) {
+      return _pendingRequests.remove(match.key);
     }
     return null;
   }

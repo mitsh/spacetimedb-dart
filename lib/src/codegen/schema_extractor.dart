@@ -47,6 +47,7 @@ class SchemaExtractor {
 
     return DatabaseSchema.fromJson(database, json);
   }
+
   /// Extract schema from a SpacetimeDB project directory
   ///
   /// This will:
@@ -127,30 +128,53 @@ class SchemaExtractor {
   /// Find the spacetimedb-standalone binary
   ///
   /// Looks in common installation locations:
-  /// - ~/.local/share/spacetime/bin/current/spacetimedb-standalone
-  /// - PATH
+  /// - Linux/macOS: `~/.local/share/spacetime/bin/current/spacetimedb-standalone`
+  /// - Windows: `%LOCALAPPDATA%\spacetime\bin\current\spacetimedb-standalone.exe`
+  /// - PATH (all platforms)
   static Future<String> _findStandaloneBinary() async {
-    // Check standard installation location
-    final home = Platform.environment['HOME'];
-    if (home != null) {
-      final standardPath = path.join(
-        home,
-        '.local/share/spacetime/bin/current/spacetimedb-standalone',
-      );
-      if (await File(standardPath).exists()) {
-        return standardPath;
+    // Check platform-specific installation locations
+    if (Platform.isWindows) {
+      final localAppData = Platform.environment['LOCALAPPDATA'];
+      if (localAppData != null) {
+        final standardPath = path.join(
+          localAppData,
+          'spacetime',
+          'bin',
+          'current',
+          'spacetimedb-standalone.exe',
+        );
+        if (await File(standardPath).exists()) {
+          return standardPath;
+        }
+      }
+    } else {
+      final home = Platform.environment['HOME'];
+      if (home != null) {
+        final standardPath = path.join(
+          home,
+          '.local',
+          'share',
+          'spacetime',
+          'bin',
+          'current',
+          'spacetimedb-standalone',
+        );
+        if (await File(standardPath).exists()) {
+          return standardPath;
+        }
       }
     }
 
     // Try to find in PATH
+    final whichCommand = Platform.isWindows ? 'where' : 'which';
     final whichResult = await Process.run(
-      'which',
+      whichCommand,
       ['spacetimedb-standalone'],
       runInShell: true,
     );
 
     if (whichResult.exitCode == 0) {
-      return whichResult.stdout.toString().trim();
+      return whichResult.stdout.toString().trim().split('\n').first.trim();
     }
 
     throw Exception(
@@ -182,13 +206,12 @@ class SchemaExtractor {
     }
 
     // Fallback: check common build output locations
-    final targetPath = path.join(projectPath, 'target', 'wasm32-unknown-unknown', 'release');
+    final targetPath =
+        path.join(projectPath, 'target', 'wasm32-unknown-unknown', 'release');
     final dir = Directory(targetPath);
     if (dir.existsSync()) {
-      final wasmFiles = dir
-          .listSync()
-          .where((f) => f.path.endsWith('.wasm'))
-          .toList();
+      final wasmFiles =
+          dir.listSync().where((f) => f.path.endsWith('.wasm')).toList();
       if (wasmFiles.isNotEmpty) {
         return wasmFiles.first.path;
       }
@@ -206,7 +229,8 @@ class SchemaExtractor {
   /// {"V9": {...schema...}} or {"V10": {...schema...}}
   ///
   /// This method extracts the actual schema, supporting any version.
-  static Map<String, dynamic> _unwrapVersionEnvelope(Map<String, dynamic> json) {
+  static Map<String, dynamic> _unwrapVersionEnvelope(
+      Map<String, dynamic> json) {
     // If there's only one top-level key starting with 'V' followed by digits,
     // assume it's a version wrapper and unwrap it
     if (json.length == 1) {
