@@ -3,25 +3,34 @@
 [![pub package](https://img.shields.io/pub/v/spacetimedb.svg)](https://pub.dev/packages/spacetimedb)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-> Dart SDK for SpacetimeDB. Real-time sync, BSATN codec, code generation, and offline-first support.
+> Dart SDK for SpacetimeDB v2. Real-time sync, BSATN codec, code generation, and offline-first support.
 
-`spacetimedb` provides the runtime client, BSATN codec, and generator tooling needed to build type-safe Flutter/Dart apps on top of SpacetimeDB. It supports live table updates, reducer calls, authentication, and offline mutation replay.
+`spacetimedb` provides the runtime client, BSATN codec, and generator tooling needed to build type-safe Flutter/Dart apps on top of **SpacetimeDB v2**. It supports live table updates via the modern SubscribeMulti protocol, server-defined views, reducer calls, authentication, and offline mutation replay.
+
+## Compatibility
+
+| SDK Version | SpacetimeDB Server | Protocol |
+| --- | --- | --- |
+| 0.1.1+ | v2.0+ | SubscribeMulti (modern) |
+| 0.1.0 | v1.12.x | Subscribe (legacy) |
 
 ## Features
 
+- **SpacetimeDB v2 support** — SubscribeMulti protocol, server-defined views, updated message format
 - WebSocket connection with reconnect handling and TLS support
 - BSATN binary encoding/decoding for SpacetimeDB data types
-- Generated, type-safe APIs for tables, reducers, enums, and views
-- Real-time table cache with insert/update/delete streams
-- Subscription API for SQL-based live queries
+- Generated, type-safe APIs for tables, reducers, enums, and **views**
+- Real-time table cache with synchronous insert/update/delete streams
+- Subscription API for SQL-based live queries (multi-query batching)
 - Authentication utilities with token persistence support
 - Offline-first mutation queue with optimistic updates
+- Web-safe storage with conditional imports (no `dart:io` dependency on web)
 
 ## Installation
 
 ```yaml
 dependencies:
-  spacetimedb: ^0.1.0
+  spacetimedb: ^0.1.1
 ```
 
 Then install dependencies:
@@ -82,6 +91,22 @@ client.users.insertStream.listen((user) {
 });
 ```
 
+### Views (SpacetimeDB v2)
+
+Views are server-defined, identity-scoped projections. The code generator produces typed view accessors alongside tables:
+
+```dart
+// Views work like tables — same cache and stream APIs
+for (final game in client.myGames.iter()) {
+  print('Game: ${game.id}, status: ${game.status}');
+}
+
+// Subscribe to view changes
+client.myPlayerData.updateStream.listen((update) {
+  print('Energy changed: ${update.old.energy} → ${update.new_.energy}');
+});
+```
+
 ### Reducers
 
 ```dart
@@ -91,11 +116,14 @@ if (result.isSuccess) {
 }
 ```
 
-### Subscriptions
+### Subscriptions (SubscribeMulti)
+
+The SDK uses the modern SubscribeMulti protocol for efficient multi-query subscription batching:
 
 ```dart
 await client.subscriptions.subscribe([
   'SELECT * FROM users WHERE active = true',
+  'SELECT * FROM games WHERE status = "active"',
 ]);
 ```
 
@@ -132,6 +160,12 @@ Use the bundled executable to generate strongly-typed Dart APIs:
 dart run spacetimedb:generate -s http://localhost:3000 -d your_database -o lib/generated
 ```
 
+The generator produces typed code for:
+- **Tables** — Typed row classes with primary key access, iteration, and change streams
+- **Views** — Same API as tables, for server-defined filtered projections
+- **Reducers** — Typed caller methods with Future-based results
+- **Sum types** — Dart enums and sealed classes for SpacetimeDB enums
+
 You can also generate from a local module path:
 
 ```bash
@@ -144,12 +178,34 @@ dart run spacetimedb:generate -p path/to/spacetimedb-module -o lib/generated
 | --- | --- |
 | `SpacetimeDbClient.connect(...)` | Connect to a SpacetimeDB database and initialize generated APIs |
 | `client.<table>.iter()` | Read cached table rows with typed iteration |
-| `client.<table>.insertStream` | Listen for real-time inserts |
+| `client.<table>.insertStream` | Listen for real-time inserts (synchronous delivery) |
+| `client.<table>.updateStream` | Listen for real-time updates with old/new values |
+| `client.<table>.deleteStream` | Listen for real-time deletes |
+| `client.<view>.iter()` | Read cached view rows (identity-scoped) |
 | `client.reducers.<name>(...)` | Call reducers with typed parameters/results |
-| `client.subscriptions.subscribe([...])` | Start additional live SQL subscriptions |
+| `client.subscriptions.subscribe([...])` | Start SubscribeMulti live SQL subscriptions |
 | `BsatnEncoder` / `BsatnDecoder` | Encode/decode BSATN payloads |
 | `AuthTokenStore` | Plug in custom token persistence |
 | `OfflineStorage` | Persist cached data and mutation queue for offline-first flows |
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│                Flutter / Dart App                │
+├─────────────────────────────────────────────────┤
+│  Generated Client (tables, views, reducers)     │
+├─────────────────────────────────────────────────┤
+│  spacetimedb SDK                                │
+│  ├── TableCache (sync broadcast streams)        │
+│  ├── SubscriptionManager (SubscribeMulti)       │
+│  ├── ReducerCaller (with offline queue)         │
+│  ├── SpacetimeDbConnection (WebSocket + auth)   │
+│  └── BSATN Codec (binary encode/decode)         │
+├─────────────────────────────────────────────────┤
+│  WebSocket (Protobuf) ←→ SpacetimeDB v2 Server │
+└─────────────────────────────────────────────────┘
+```
 
 ## Platform Support
 

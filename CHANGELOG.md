@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-02-26
+
+### Fixed
+- All 8 `StreamController.broadcast()` in `TableCache` now use `sync: true` to prevent event delivery race condition where async microtask scheduling allowed reducer Future completions to cancel subscriptions before listeners received events
+- Debug logging for update stream delivery (`EMIT_UPDATE` with identity hash codes)
+
+### Changed
+- README updated to document SpacetimeDB v2 compatibility, SubscribeMulti protocol, views, and architecture overview
 ## [0.1.1] - 2026-02-16
 
 ### Added
