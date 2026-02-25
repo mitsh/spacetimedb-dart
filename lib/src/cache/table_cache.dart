@@ -54,22 +54,31 @@ class TableCache<T> {
   final Map<String, List<_OptimisticChange<T>>> _optimisticChanges = {};
 
   // === Simple streams (existing - backward compatible) ===
-  final StreamController<T> _insertController = StreamController<T>.broadcast();
-  final StreamController<T> _deleteController = StreamController<T>.broadcast();
+  // Using sync: true to ensure events are delivered synchronously during add().
+  // This eliminates a race condition where async (default) broadcast controllers
+  // deliver events via microtasks, creating a window between add() and delivery
+  // in which other microtasks (e.g. reducer Future completions) can run and
+  // cancel subscriptions — causing listeners to silently miss events.
+  // Safe because: all add() calls originate from SDK message processing
+  // (WebSocket handler → _emitChanges), never from listener callbacks.
+  final StreamController<T> _insertController =
+      StreamController<T>.broadcast(sync: true);
+  final StreamController<T> _deleteController =
+      StreamController<T>.broadcast(sync: true);
   final StreamController<TableUpdate<T>> _updateController =
-      StreamController<TableUpdate<T>>.broadcast();
+      StreamController<TableUpdate<T>>.broadcast(sync: true);
   final StreamController<TableChange<T>> _changeController =
-      StreamController<TableChange<T>>.broadcast();
+      StreamController<TableChange<T>>.broadcast(sync: true);
 
   // === Event streams with context (new - Phase 3) ===
   final StreamController<TableInsertEvent<T>> _insertEventController =
-      StreamController<TableInsertEvent<T>>.broadcast();
+      StreamController<TableInsertEvent<T>>.broadcast(sync: true);
   final StreamController<TableUpdateEvent<T>> _updateEventController =
-      StreamController<TableUpdateEvent<T>>.broadcast();
+      StreamController<TableUpdateEvent<T>>.broadcast(sync: true);
   final StreamController<TableDeleteEvent<T>> _deleteEventController =
-      StreamController<TableDeleteEvent<T>>.broadcast();
+      StreamController<TableDeleteEvent<T>>.broadcast(sync: true);
   final StreamController<TableEvent<T>> _eventController =
-      StreamController<TableEvent<T>>.broadcast();
+      StreamController<TableEvent<T>>.broadcast(sync: true);
 
   TableCache(
       {required this.tableId, required this.tableName, required this.decoder});
@@ -278,7 +287,8 @@ class TableCache<T> {
       eventStream.where((e) => e.context.isMyTransaction);
 
   void _emitChanges(_RowChanges<T> changes, EventContext context) {
-    SdkLogger.i('EMIT_CHANGES[$tableName]: inserts=${changes.inserted.length}, updates=${changes.updated.length}, deletes=${changes.deleted.length}');
+    SdkLogger.i(
+        'EMIT_CHANGES[$tableName]: inserts=${changes.inserted.length}, updates=${changes.updated.length}, deletes=${changes.deleted.length}');
     for (final row in changes.inserted) {
       _insertController.add(row);
       _changeController.add(TableChange.insert(row));
@@ -298,7 +308,13 @@ class TableCache<T> {
     }
 
     for (final (oldRow, newRow) in changes.updated) {
-      _updateController.add(TableUpdate(oldRow, newRow));
+      SdkLogger.d('EMIT_UPDATE[$tableName]: cache#${identityHashCode(this)}, '
+          'ctrl#${identityHashCode(_updateController)}, '
+          'hasListener=${_updateController.hasListener}, '
+          'stream#${identityHashCode(_updateController.stream)}');
+      final update = TableUpdate(oldRow, newRow);
+      _updateController.add(update);
+      SdkLogger.d('EMIT_UPDATE[$tableName]: add() returned');
       _changeController.add(TableChange.update(oldRow, newRow));
 
       final updateEvent = TableUpdateEvent(context, oldRow, newRow);
@@ -620,17 +636,21 @@ class TableCache<T> {
     _optimisticChanges.remove(requestId);
   }
 
-  void confirmOrRollbackOptimisticChange(String requestId, Set<dynamic> touchedKeys) {
+  void confirmOrRollbackOptimisticChange(
+      String requestId, Set<dynamic> touchedKeys) {
     final changes = _optimisticChanges.remove(requestId);
     if (changes == null) return;
 
-    SdkLogger.d('confirmOrRollbackOptimisticChange for "$tableName" requestId="$requestId"');
-    SdkLogger.d('touchedKeys: ${touchedKeys.map((k) => '"$k"').toList()}, changes: ${changes.length}');
+    SdkLogger.d(
+        'confirmOrRollbackOptimisticChange for "$tableName" requestId="$requestId"');
+    SdkLogger.d(
+        'touchedKeys: ${touchedKeys.map((k) => '"$k"').toList()}, changes: ${changes.length}');
 
     for (final change in changes.reversed) {
       final wasTouched = touchedKeys.contains(change.primaryKey);
 
-      SdkLogger.d('Change: ${change.type.name}, PK: "${change.primaryKey}", wasTouched: $wasTouched');
+      SdkLogger.d(
+          'Change: ${change.type.name}, PK: "${change.primaryKey}", wasTouched: $wasTouched');
 
       if (wasTouched) {
         SdkLogger.d('CONFIRMED (key was touched)');
@@ -701,7 +721,8 @@ class TableCache<T> {
     if (optimisticPrimaryKeys.isEmpty) {
       clear();
     } else {
-      _rowsByPrimaryKey.removeWhere((key, _) => !optimisticPrimaryKeys.contains(key));
+      _rowsByPrimaryKey
+          .removeWhere((key, _) => !optimisticPrimaryKeys.contains(key));
       _rows.removeWhere((row) {
         final pk = decoder.getPrimaryKey(row);
         return !optimisticPrimaryKeys.contains(pk);
@@ -746,9 +767,9 @@ enum ChangeType { insert, update, delete }
 /// Represents any change to a table row
 class TableChange<T> {
   final ChangeType type;
-  final T? row; 
+  final T? row;
   final T? oldRow;
-  final T? newRow; 
+  final T? newRow;
 
   TableChange.insert(this.row)
       : type = ChangeType.insert,
