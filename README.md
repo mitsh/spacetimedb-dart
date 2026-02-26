@@ -9,10 +9,10 @@
 
 ## Compatibility
 
-| SDK Version | SpacetimeDB Server | Protocol |
-| --- | --- | --- |
-| 0.1.1+ | v2.0+ | SubscribeMulti (modern) |
-| 0.1.0 | v1.12.x | Subscribe (legacy) |
+| SDK Version | SpacetimeDB Server | Protocol                |
+|-------------|--------------------|-------------------------|
+| 1.2.0+      | v2.0+              | SubscribeMulti (modern) |
+| 0.1.0       | v1.12.x            | Subscribe (legacy)      |
 
 ## Features
 
@@ -30,7 +30,7 @@
 
 ```yaml
 dependencies:
-  spacetimedb: ^0.1.1
+  spacetimedb: ^1.2.0
 ```
 
 Then install dependencies:
@@ -174,25 +174,25 @@ dart run spacetimedb:generate -p path/to/spacetimedb-module -o lib/generated
 
 ## API Overview
 
-| API | Purpose |
-| --- | --- |
-| `SpacetimeDbClient.connect(...)` | Connect to a SpacetimeDB database and initialize generated APIs |
-| `client.<table>.iter()` | Read cached table rows with typed iteration |
-| `client.<table>.insertStream` | Listen for real-time inserts (synchronous delivery) |
-| `client.<table>.updateStream` | Listen for real-time updates with old/new values |
-| `client.<table>.deleteStream` | Listen for real-time deletes |
-| `client.<view>.iter()` | Read cached view rows (identity-scoped) |
-| `client.reducers.<name>(...)` | Call reducers with typed parameters/results |
-| `client.subscriptions.subscribe([...])` | Start SubscribeMulti live SQL subscriptions |
-| `BsatnEncoder` / `BsatnDecoder` | Encode/decode BSATN payloads |
-| `AuthTokenStore` | Plug in custom token persistence |
-| `OfflineStorage` | Persist cached data and mutation queue for offline-first flows |
+| API                                     | Purpose                                                         |
+|-----------------------------------------|-----------------------------------------------------------------|
+| `SpacetimeDbClient.connect(...)`        | Connect to a SpacetimeDB database and initialize generated APIs |
+| `client.<table>.iter()`                 | Read cached table rows with typed iteration                     |
+| `client.<table>.insertStream`           | Listen for real-time inserts (synchronous delivery)             |
+| `client.<table>.updateStream`           | Listen for real-time updates with old/new values                |
+| `client.<table>.deleteStream`           | Listen for real-time deletes                                    |
+| `client.<view>.iter()`                  | Read cached view rows (identity-scoped)                         |
+| `client.reducers.<name>(...)`           | Call reducers with typed parameters/results                     |
+| `client.subscriptions.subscribe([...])` | Start SubscribeMulti live SQL subscriptions                     |
+| `BsatnEncoder` / `BsatnDecoder`         | Encode/decode BSATN payloads                                    |
+| `AuthTokenStore`                        | Plug in custom token persistence                                |
+| `OfflineStorage`                        | Persist cached data and mutation queue for offline-first flows  |
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                Flutter / Dart App                │
+│                Flutter / Dart App               │
 ├─────────────────────────────────────────────────┤
 │  Generated Client (tables, views, reducers)     │
 ├─────────────────────────────────────────────────┤
@@ -203,20 +203,20 @@ dart run spacetimedb:generate -p path/to/spacetimedb-module -o lib/generated
 │  ├── SpacetimeDbConnection (WebSocket + auth)   │
 │  └── BSATN Codec (binary encode/decode)         │
 ├─────────────────────────────────────────────────┤
-│  WebSocket (Protobuf) ←→ SpacetimeDB v2 Server │
+│  WebSocket (Protobuf) ←→ SpacetimeDB v2 Server  │
 └─────────────────────────────────────────────────┘
 ```
 
 ## Platform Support
 
 | Platform | Runtime | Code Generation | Offline (File) |
-| --- | --- | --- | --- |
-| Android | Yes | Yes | Yes |
-| iOS | Yes | Yes | Yes |
-| macOS | Yes | Yes | Yes |
-| Windows | Yes | Yes | Yes |
-| Linux | Yes | Yes | Yes |
-| Web | Yes | N/A | No* |
+|----------|---------|-----------------|----------------|
+| Android  | Yes     | Yes             | Yes            |
+| iOS      | Yes     | Yes             | Yes            |
+| macOS    | Yes     | Yes             | Yes            |
+| Windows  | Yes     | Yes             | Yes            |
+| Linux    | Yes     | Yes             | Yes            |
+| Web      | Yes     | N/A             | No*            |
 
 \* Web builds use `InMemoryOfflineStorage`. File-based `JsonFileStorage` requires `dart:io` and is not available on web. The SDK automatically provides a web-compatible stub that throws `UnsupportedError` if you try to use `JsonFileStorage` on web.
 
