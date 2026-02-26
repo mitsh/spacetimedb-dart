@@ -5,15 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.2] - 2026-02-26
+## [1.2.0] - 2026-02-26
+
+### Changed
+- **Stable release for SpacetimeDB v2** — version bump from 0.1.x to 1.2.0 to signal production-ready v2 compatibility
+- README comprehensively rewritten: compatibility matrix, architecture diagram, full API reference, security considerations, logging guide
+- Updated `uuid` dependency to ^4.5.3
 
 ### Fixed
 - All 8 `StreamController.broadcast()` in `TableCache` now use `sync: true` to prevent event delivery race condition where async microtask scheduling allowed reducer Future completions to cancel subscriptions before listeners received events
-- Debug logging for update stream delivery (`EMIT_UPDATE` with identity hash codes)
+
+## [0.1.2] - 2026-02-19
+
+### Fixed
+- Sync broadcast controllers in TableCache (backported to 0.1.x)
+- Debug logging for update stream delivery
 
 ### Changed
-- README updated to document SpacetimeDB v2 compatibility, SubscribeMulti protocol, views, and architecture overview
-## [0.1.1] - 2026-02-16
+- README updated to document SpacetimeDB v2 compatibility
 
 ### Added
 - Offline-first mutation queue with `PendingMutation` model and replay support
