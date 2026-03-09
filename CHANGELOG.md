@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-03-09
+
+### Fixed
+- **Code generator**: View-only types now use their actual TypeDef name (e.g. `ActiveGamePlayer`, `RecentMatchDisplay`) instead of opaque `Type1`, `Type26` identifiers
+- **Code generator**: Synthetic table files for view row types use proper snake_case naming derived from TypeDef names
+- **Code generator**: Client imports for view row types resolve to correct file names (e.g. `recent_match_display.dart`)
+- **Code generator**: Stale `.dart` files in output directory are cleaned up before writing new ones, preventing orphaned type files from previous generations
 ## [1.2.0] - 2026-02-26
 
 ### Changed

@@ -11,7 +11,7 @@
 
 | SDK Version | SpacetimeDB Server | Protocol                |
 |-------------|--------------------|-------------------------|
-| 1.2.0+      | v2.0+              | SubscribeMulti (modern) |
+| 1.3.0+      | v2.0+              | SubscribeMulti (modern) |
 | 0.1.0       | v1.12.x            | Subscribe (legacy)      |
 
 ## Features
@@ -30,7 +30,7 @@
 
 ```yaml
 dependencies:
-  spacetimedb: ^1.2.0
+  spacetimedb: ^1.3.0
 ```
 
 Then install dependencies:
