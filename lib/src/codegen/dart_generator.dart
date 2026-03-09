@@ -2,6 +2,7 @@ import 'package:spacetimedb/src/codegen/client_generator.dart';
 import 'package:spacetimedb/src/codegen/reducer_generator.dart';
 import 'package:spacetimedb/src/codegen/models.dart';
 import 'package:spacetimedb/src/codegen/table_generator.dart';
+import 'package:spacetimedb/src/codegen/view_generator.dart';
 import 'package:spacetimedb/src/codegen/generators/sum_type_generator.dart';
 import 'package:spacetimedb/src/utils/sdk_logger.dart';
 import 'dart:io';
@@ -40,6 +41,50 @@ class DartGenerator {
       files.add(
         GeneratedFile(
           filename: '${table.name}.dart',
+          content: generator.generate(),
+        ),
+      );
+    }
+
+    // Generate files for view return types not backed by tables
+    final generatedTypeRefs =
+        schema.tables.map((t) => t.productTypeRef).toSet();
+    final viewGenerator = ViewGenerator(schema);
+
+    for (final view in schema.views) {
+      final typeRef = viewGenerator.getViewTypeRef(view);
+      if (typeRef == null) continue;
+      if (generatedTypeRefs.contains(typeRef)) continue;
+      if (typeRef < 0 || typeRef >= schema.typeSpace.types.length) continue;
+      if (schema.typeSpace.types[typeRef].product == null) continue;
+
+      generatedTypeRefs.add(typeRef);
+
+      // Look up actual TypeDef name for proper file naming
+      final typeDefForNaming = schema.types.firstWhere(
+        (td) => td.typeRef == typeRef,
+        orElse: () => TypeDef(scope: [], name: '', typeRef: -1, customOrdering: false),
+      );
+      final typeBaseName = typeDefForNaming.name.isNotEmpty
+          ? _toSnakeCase(typeDefForNaming.name)
+          : 'type$typeRef';
+
+      final syntheticTable = TableSchema(
+        name: typeBaseName,
+        productTypeRef: typeRef,
+        primaryKey: const [],
+        indexes: const [],
+        constraints: const [],
+        sequences: const [],
+        schedule: const {},
+        tableType: const {},
+        tableAccess: const {},
+      );
+
+      final generator = TableGenerator(schema, syntheticTable);
+      files.add(
+        GeneratedFile(
+          filename: '$typeBaseName.dart',
           content: generator.generate(),
         ),
       );
@@ -90,6 +135,13 @@ class DartGenerator {
     await dir.create(recursive: true);
 
     final files = generateAll();
+
+    // Clean up stale .dart files before writing new ones
+    for (final entity in dir.listSync()) {
+      if (entity is File && entity.path.endsWith('.dart')) {
+        entity.deleteSync();
+      }
+    }
 
     for (final file in files) {
       final path = '${dir.path}/${file.filename}';

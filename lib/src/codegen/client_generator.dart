@@ -29,6 +29,18 @@ class ClientGenerator {
     for (final table in schema.tables) {
       buf.writeln("import '${table.name}.dart';");
     }
+
+    // Import view row type files (for views that return custom types, not table types)
+    final tableNames = schema.tables.map((t) => _toPascalCase(t.name)).toSet();
+    final importedViewTypes = <String>{};
+    for (final view in schema.views) {
+      final rowType = _viewGenerator.getViewRowType(view);
+      if (rowType != null && !tableNames.contains(rowType) && !importedViewTypes.contains(rowType)) {
+        final fileName = _toSnakeCase(rowType);
+        buf.writeln("import '$fileName.dart';");
+        importedViewTypes.add(rowType);
+      }
+    }
     buf.writeln();
 
     // Client class name (always SpacetimeDbClient for consistency)
@@ -366,5 +378,14 @@ class ClientGenerator {
         parts.skip(1).map((word) {
           return word[0].toUpperCase() + word.substring(1).toLowerCase();
         }).join('');
+  }
+
+  String _toSnakeCase(String input) {
+    return input
+        .replaceAllMapped(
+          RegExp(r'[A-Z]'),
+          (match) => '_${match.group(0)!.toLowerCase()}',
+        )
+        .replaceFirst(RegExp(r'^_'), '');
   }
 }

@@ -169,7 +169,15 @@ class ViewGenerator {
             return _toPascalCase(table.name);
           }
         }
-        // If no table found, use generic name
+        // If no table found, look up TypeDef name from schema.types
+        final typeDef = schema.types.firstWhere(
+          (td) => td.typeRef == typeRef,
+          orElse: () => TypeDef(scope: [], name: '', typeRef: -1, customOrdering: false),
+        );
+        if (typeDef.name.isNotEmpty) {
+          return typeDef.name; // Already PascalCase — do NOT call _toPascalCase()
+        }
+        // Final fallback
         return 'Type$typeRef';
       }
     }
