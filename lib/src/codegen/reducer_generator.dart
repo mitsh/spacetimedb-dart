@@ -21,11 +21,24 @@ class ReducerGenerator {
         ),
       ),
     );
+    final hasUint8ListParam = reducers.any(
+      (reducer) => reducer.params.elements.any((param) {
+        final dartType = TypeMapper.toDartType(
+          param.algebraicType,
+          typeSpace: typeSpace,
+          typeDefs: typeDefs,
+        );
+        return dartType.contains('Uint8List');
+      }),
+    );
 
     // Header
     buf.writeln('// GENERATED CODE - DO NOT MODIFY BY HAND');
     buf.writeln();
     buf.writeln("import 'dart:async';");
+    if (hasUint8ListParam) {
+      buf.writeln("import 'dart:typed_data';");
+    }
     buf.writeln(
       "import 'package:spacetimedb/spacetimedb.dart';",
     );
@@ -123,12 +136,25 @@ class ReducerGenerator {
         ),
       ),
     );
+    final hasUint8ListParam = reducers.any(
+      (reducer) => reducer.params.elements.any((param) {
+        final dartType = TypeMapper.toDartType(
+          param.algebraicType,
+          typeSpace: typeSpace,
+          typeDefs: typeDefs,
+        );
+        return dartType.contains('Uint8List');
+      }),
+    );
 
     // Header
     buf.writeln(
       '// GENERATED REDUCER ARGUMENT CLASSES AND DECODERS - DO NOT MODIFY BY HAND',
     );
     buf.writeln();
+    if (hasUint8ListParam) {
+      buf.writeln("import 'dart:typed_data';");
+    }
     buf.writeln(
       "import 'package:spacetimedb/spacetimedb.dart';",
     );
@@ -382,7 +408,7 @@ class ReducerGenerator {
       typeSpace: typeSpace,
       typeDefs: typeDefs,
     )) {
-      return '    encoder.writeBytes(($valueName as Identity).bytes);';
+      return '    encoder.writeRawBytes(($valueName as Identity).bytes);';
     }
 
     final optionInnerType = TypeMapper.getOptionInnerType(
@@ -412,8 +438,8 @@ class ReducerGenerator {
       return '    $valueName.encode(encoder);';
     }
 
-    final method = TypeMapper.getEncoderMethod(algebraicType);
-    return '    encoder.$method($valueName);';
+    final encodeExpr = TypeMapper.getEncodeExpression(valueName, algebraicType, typeSpace: typeSpace, typeDefs: typeDefs);
+    return '    $encodeExpr;';
   }
 
   String _getDecodeExpression(Map<String, dynamic> algebraicType) {
@@ -444,6 +470,12 @@ class ReducerGenerator {
       return '_readScheduleAt(decoder)';
     }
 
+    // Handle Array types
+    if (algebraicType.containsKey('Array')) {
+      final decodeExpr = TypeMapper.getDecodeExpression(algebraicType, typeSpace: typeSpace, typeDefs: typeDefs);
+      return decodeExpr;
+    }
+
     if (_isPrimitive(algebraicType)) {
       final method = TypeMapper.getDecoderMethod(algebraicType);
       return 'decoder.$method()';
@@ -466,7 +498,7 @@ class ReducerGenerator {
       typeSpace: typeSpace,
       typeDefs: typeDefs,
     )) {
-      return 'encoder.writeBytes(($valueName as Identity).bytes)';
+      return 'encoder.writeRawBytes(($valueName as Identity).bytes)';
     }
 
     if (TypeMapper.isRefType(algebraicType)) {
@@ -477,8 +509,8 @@ class ReducerGenerator {
       return '$valueName.encode(encoder)';
     }
 
-    final method = TypeMapper.getEncoderMethod(algebraicType);
-    return 'encoder.$method($valueName)';
+    final encodeExpr = TypeMapper.getEncodeExpression(valueName, algebraicType, typeSpace: typeSpace, typeDefs: typeDefs);
+    return encodeExpr;
   }
 
   String _getInlineDecodeExpression(Map<String, dynamic> algebraicType) {
@@ -488,6 +520,12 @@ class ReducerGenerator {
       typeDefs: typeDefs,
     )) {
       return 'Identity(decoder.readBytes(32))';
+    }
+
+    // Handle Array types
+    if (algebraicType.containsKey('Array')) {
+      final decodeExpr = TypeMapper.getDecodeExpression(algebraicType, typeSpace: typeSpace, typeDefs: typeDefs);
+      return decodeExpr;
     }
 
     if (_isPrimitive(algebraicType)) {

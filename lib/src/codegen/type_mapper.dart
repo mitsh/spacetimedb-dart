@@ -120,8 +120,11 @@ class TypeMapper {
     // 2. Handle Array types (recursive)
     if (algebraicType.containsKey('Array')) {
       final elementType = algebraicType['Array'];
+      if (elementType is Map && elementType.containsKey('U8')) {
+        return 'Uint8List';
+      }
       final dartInnerType = toDartType(
-        elementType,
+        (elementType as Map).cast<String, dynamic>(),
         typeSpace: typeSpace,
         typeDefs: typeDefs,
       );
@@ -155,6 +158,15 @@ class TypeMapper {
       }
     }
 
+    if (algebraicType.containsKey('Array')) {
+      final elementType = algebraicType['Array'];
+      if (elementType is Map && elementType.containsKey('U8')) {
+        return 'writeBytes';
+      }
+      throw UnsupportedError(
+          'No encoder method for array type: $algebraicType');
+    }
+
     for (final key in _encoderMethodMap.keys) {
       if (algebraicType.containsKey(key)) {
         return _encoderMethodMap[key]!;
@@ -181,6 +193,15 @@ class TypeMapper {
       }
     }
 
+    if (algebraicType.containsKey('Array')) {
+      final elementType = algebraicType['Array'];
+      if (elementType is Map && elementType.containsKey('U8')) {
+        return 'readBytes';
+      }
+      throw UnsupportedError(
+          'No decoder method for array type: $algebraicType');
+    }
+
     for (final key in _decoderMethodMap.keys) {
       if (algebraicType.containsKey(key)) {
         return _decoderMethodMap[key]!;
@@ -188,6 +209,66 @@ class TypeMapper {
     }
 
     throw UnsupportedError('No decoder method for type: $algebraicType');
+  }
+
+  /// Get the full encode expression for a type, handling Array types.
+  /// Returns e.g. 'encoder.writeU64(value)' or
+  /// 'encoder.writeArray<Int64>(value, (item) => encoder.writeU64(item))'
+  static String getEncodeExpression(
+    String valueName,
+    Map<String, dynamic> algebraicType, {
+    TypeSpace? typeSpace,
+    List<TypeDef>? typeDefs,
+  }) {
+    if (algebraicType.containsKey('Array')) {
+      final elementType = algebraicType['Array'] as Map<String, dynamic>;
+      if (elementType.containsKey('U8')) {
+        return 'encoder.writeBytes($valueName)';
+      }
+      final innerDartType = toDartType(
+        elementType,
+        typeSpace: typeSpace,
+        typeDefs: typeDefs,
+      );
+      final innerExpr = getEncodeExpression(
+        'item',
+        elementType,
+        typeSpace: typeSpace,
+        typeDefs: typeDefs,
+      );
+      return 'encoder.writeArray<$innerDartType>($valueName, (item) => $innerExpr)';
+    }
+    final method = getEncoderMethod(algebraicType);
+    return 'encoder.$method($valueName)';
+  }
+
+  /// Get the full decode expression for a type, handling Array types.
+  /// Returns e.g. 'decoder.readU64()' or
+  /// 'decoder.readArray<Int64>(() => decoder.readU64())'
+  static String getDecodeExpression(
+    Map<String, dynamic> algebraicType, {
+    TypeSpace? typeSpace,
+    List<TypeDef>? typeDefs,
+  }) {
+    if (algebraicType.containsKey('Array')) {
+      final elementType = algebraicType['Array'] as Map<String, dynamic>;
+      if (elementType.containsKey('U8')) {
+        return 'decoder.readBytes()';
+      }
+      final innerDartType = toDartType(
+        elementType,
+        typeSpace: typeSpace,
+        typeDefs: typeDefs,
+      );
+      final innerExpr = getDecodeExpression(
+        elementType,
+        typeSpace: typeSpace,
+        typeDefs: typeDefs,
+      );
+      return 'decoder.readArray<$innerDartType>(() => $innerExpr)';
+    }
+    final method = getDecoderMethod(algebraicType);
+    return 'decoder.$method()';
   }
 
   static bool isIdentityType(

@@ -139,8 +139,8 @@ class $className extends $enumName {
     }
 
     final dartType = TypeMapper.toDartType(algebraicType);
-    final decoderMethod = TypeMapper.getDecoderMethod(algebraicType);
-    final encoderMethod = TypeMapper.getEncoderMethod(algebraicType);
+    final decodeExpr = TypeMapper.getDecodeExpression(algebraicType, typeSpace: typeSpace, typeDefs: typeDefs);
+    final encodeExpr = TypeMapper.getEncodeExpression('value', algebraicType, typeSpace: typeSpace, typeDefs: typeDefs);
     final toJsonValue = _getToJsonValue('value', algebraicType);
     final fromJsonValue = _getFromJsonValue('value', algebraicType, dartType);
 
@@ -151,7 +151,7 @@ class $className extends $enumName {
   const $className(this.value);
 
   factory $className.decode(BsatnDecoder decoder) {
-    return $className(decoder.$decoderMethod());
+    return $className($decodeExpr);
   }
 
   factory $className.fromJson(Map<String, dynamic> json) {
@@ -161,7 +161,7 @@ class $className extends $enumName {
   @override
   void encode(BsatnEncoder encoder) {
     encoder.writeU8($tag);
-    encoder.$encoderMethod(value);
+    $encodeExpr;
   }
 
   @override
@@ -183,15 +183,15 @@ class $className extends $enumName {
       final element = elements[i];
       final fieldName = 'field$i';
       final dartType = TypeMapper.toDartType(element.algebraicType);
-      final decoderMethod = TypeMapper.getDecoderMethod(element.algebraicType);
-      final encoderMethod = TypeMapper.getEncoderMethod(element.algebraicType);
+      final decodeExpr = TypeMapper.getDecodeExpression(element.algebraicType, typeSpace: typeSpace, typeDefs: typeDefs);
+      final encodeExpr = TypeMapper.getEncodeExpression(fieldName, element.algebraicType, typeSpace: typeSpace, typeDefs: typeDefs);
       final toJsonValue = _getToJsonValue(fieldName, element.algebraicType);
       final fromJsonValue = _getFromJsonValue(fieldName, element.algebraicType, dartType);
 
       fields.add('  final $dartType $fieldName;');
       params.add('this.$fieldName');
-      decodeStatements.add('      decoder.$decoderMethod(),');
-      encodeStatements.add('    encoder.$encoderMethod($fieldName);');
+      decodeStatements.add('      $decodeExpr,');
+      encodeStatements.add('    $encodeExpr;');
       toJsonFields.add("      '$fieldName': $toJsonValue,");
       fromJsonArgs.add('      $fromJsonValue,');
     }
@@ -241,15 +241,15 @@ ${toJsonFields.join('\n')}
     for (final element in elements) {
       final fieldName = element.name ?? 'field';
       final dartType = TypeMapper.toDartType(element.algebraicType);
-      final decoderMethod = TypeMapper.getDecoderMethod(element.algebraicType);
-      final encoderMethod = TypeMapper.getEncoderMethod(element.algebraicType);
+      final decodeExpr = TypeMapper.getDecodeExpression(element.algebraicType, typeSpace: typeSpace, typeDefs: typeDefs);
+      final encodeExpr = TypeMapper.getEncodeExpression(fieldName, element.algebraicType, typeSpace: typeSpace, typeDefs: typeDefs);
       final toJsonValue = _getToJsonValue(fieldName, element.algebraicType);
       final fromJsonValue = _getFromJsonValue(fieldName, element.algebraicType, dartType);
 
       fields.add('  final $dartType $fieldName;');
       namedParams.add('required this.$fieldName');
-      decodeStatements.add('      $fieldName: decoder.$decoderMethod(),');
-      encodeStatements.add('    encoder.$encoderMethod($fieldName);');
+      decodeStatements.add('      $fieldName: $decodeExpr,');
+      encodeStatements.add('    $encodeExpr;');
       toJsonFields.add("      '$fieldName': $toJsonValue,");
       fromJsonArgs.add('      $fieldName: $fromJsonValue,');
     }

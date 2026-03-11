@@ -27,6 +27,18 @@ class TableGenerator {
         typeSpace: schema.typeSpace,
       ),
     );
+    final hasUint8ListField = productType.elements.any((element) {
+      final dartType = TypeMapper.toDartType(
+        element.algebraicType,
+        typeSpace: schema.typeSpace,
+        typeDefs: schema.types,
+      );
+      return dartType.contains('Uint8List');
+    });
+
+    if (hasUint8ListField) {
+      buf.writeln("import 'dart:typed_data';");
+    }
 
     // Collect imports for Ref types
     final imports = <String>{};
@@ -287,6 +299,9 @@ class TableGenerator {
     }
     if (algebraicType.containsKey('Array')) {
       final elementType = algebraicType['Array'] as Map<String, dynamic>;
+      if (elementType.containsKey('U8')) {
+        return '$fieldName.toList()';
+      }
       if (TypeMapper.isRefType(elementType)) {
         return '$fieldName.map((e) => e.toJson()).toList()';
       }
@@ -336,6 +351,9 @@ class TableGenerator {
     }
     if (algebraicType.containsKey('Array')) {
       final elementType = algebraicType['Array'] as Map<String, dynamic>;
+      if (elementType.containsKey('U8')) {
+        return "Uint8List.fromList((json['$fieldName'] as List?)?.cast<int>() ?? [])";
+      }
       final innerDartType = TypeMapper.toDartType(
         elementType,
         typeSpace: schema.typeSpace,
@@ -373,7 +391,7 @@ class TableGenerator {
       typeSpace: schema.typeSpace,
       typeDefs: schema.types,
     )) {
-      return '    encoder.writeBytes(($fieldName as Identity).bytes);';
+      return '    encoder.writeRawBytes(($fieldName as Identity).bytes);';
     }
 
     final optionInnerType = TypeMapper.getOptionInnerType(
@@ -400,6 +418,20 @@ class TableGenerator {
 
     if (TypeMapper.isRefType(algebraicType)) {
       return '    $fieldName.encode(encoder);';
+    }
+
+    // Handle non-U8 Array types (need writeArray with callback)
+    if (algebraicType.containsKey('Array')) {
+      final elementType = algebraicType['Array'] as Map<String, dynamic>;
+      if (!elementType.containsKey('U8')) {
+        final innerDartType = TypeMapper.toDartType(
+          elementType,
+          typeSpace: schema.typeSpace,
+          typeDefs: schema.types,
+        );
+        final innerWrite = _getInlineWriteStatement('item', elementType);
+        return '    encoder.writeArray<$innerDartType>($fieldName, (item) => $innerWrite);';
+      }
     }
 
     final method = TypeMapper.getEncoderMethod(algebraicType);
@@ -446,6 +478,20 @@ class TableGenerator {
       return '$typeName.decode(decoder)';
     }
 
+    // Handle non-U8 Array types (need readArray with callback)
+    if (algebraicType.containsKey('Array')) {
+      final elementType = algebraicType['Array'] as Map<String, dynamic>;
+      if (!elementType.containsKey('U8')) {
+        final innerDartType = TypeMapper.toDartType(
+          elementType,
+          typeSpace: schema.typeSpace,
+          typeDefs: schema.types,
+        );
+        final innerDecode = _getInlineDecodeExpression(elementType);
+        return 'decoder.readArray<$innerDartType>(() => $innerDecode)';
+      }
+    }
+
     final method = TypeMapper.getDecoderMethod(algebraicType);
     return 'decoder.$method()';
   }
@@ -459,11 +505,25 @@ class TableGenerator {
       typeSpace: schema.typeSpace,
       typeDefs: schema.types,
     )) {
-      return 'encoder.writeBytes(($valueName as Identity).bytes)';
+      return 'encoder.writeRawBytes(($valueName as Identity).bytes)';
     }
 
     if (TypeMapper.isRefType(algebraicType)) {
       return '$valueName.encode(encoder)';
+    }
+
+    // Handle non-U8 Array types
+    if (algebraicType.containsKey('Array')) {
+      final elementType = algebraicType['Array'] as Map<String, dynamic>;
+      if (!elementType.containsKey('U8')) {
+        final innerDartType = TypeMapper.toDartType(
+          elementType,
+          typeSpace: schema.typeSpace,
+          typeDefs: schema.types,
+        );
+        final innerWrite = _getInlineWriteStatement('innerItem', elementType);
+        return 'encoder.writeArray<$innerDartType>($valueName, (innerItem) => $innerWrite)';
+      }
     }
 
     final method = TypeMapper.getEncoderMethod(algebraicType);
@@ -486,6 +546,20 @@ class TableGenerator {
         typeDefs: schema.types,
       );
       return '$typeName.decode(decoder)';
+    }
+
+    // Handle non-U8 Array types
+    if (algebraicType.containsKey('Array')) {
+      final elementType = algebraicType['Array'] as Map<String, dynamic>;
+      if (!elementType.containsKey('U8')) {
+        final innerDartType = TypeMapper.toDartType(
+          elementType,
+          typeSpace: schema.typeSpace,
+          typeDefs: schema.types,
+        );
+        final innerDecode = _getInlineDecodeExpression(elementType);
+        return 'decoder.readArray<$innerDartType>(() => $innerDecode)';
+      }
     }
 
     final method = TypeMapper.getDecoderMethod(algebraicType);
